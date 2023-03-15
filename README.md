@@ -1,2 +1,2 @@
-# album-translate-spotify
-Google Workspace Add-on to help translate Spotify® album tracks and search within artist's discography
+# album-translate-for-spotify
+Google Workspace Add-on to help translate Spotify® album track names and search within artist's discography

@@ -1,0 +1,53 @@
+{
+  "timeZone": "Asia/Tbilisi",
+  "dependencies": {
+    "libraries": [
+      {
+        "userSymbol": "OAuth2",
+        "version": "43",
+        "libraryId": "1B7FSrk5Zi6L1rSxxTDgDEUsPzlukDsi4KGuTMorsTQHhGBzBkMun4iDF"
+      }
+    ]
+  },
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/script.scriptapp",
+    "https://www.googleapis.com/auth/script.external_request"
+  ],
+  "addOns": {
+    "common": {
+      "name": "Album Translate for Spotify",
+      "logoUrl": "https://raw.githubusercontent.com/indeliblecanopus/manju/main/add-on-icons/rect111.png",
+      "layoutProperties": {
+        "primaryColor": "#000000",
+        "secondaryColor": "#1db970"
+      },
+      "homepageTrigger": {
+        "runFunction": "onHomePage"
+      },
+      "universalActions": [
+        {
+          "label": "Refresh",
+          "runFunction": "refreshCard"
+        },
+        {
+          "label": "Reset App",
+          "runFunction": "reset"
+        },
+        {
+          "label": "Support",
+          "openLink": "mailto:support@indeliblecanopus.cyou"
+        }
+      ]
+    },
+    "drive": {},
+    "sheets": {},
+    "docs": {}
+  },
+  "urlFetchWhitelist": [
+    "https://api.spotify.com/",
+    "https://accounts.spotify.com/",
+    "https://script.google.com/"
+  ]
+}
