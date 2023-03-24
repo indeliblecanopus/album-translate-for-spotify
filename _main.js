@@ -46,10 +46,6 @@ const ONE_MINUTE = 60000;
 /** ------------------------------------------------------------ */
 
 
-function printRedirectURL() {
-  Logger.log('https://script.google.com/macros/d/' + ScriptApp.getScriptId() + '/usercallback')
-}
-
 
 function reset() {
 
@@ -155,15 +151,10 @@ function getOAuthService_(credentials) {
 function configurationCard(event, saved_credentials = false) {
   Logger.log('entered configurationCard()');
 
-  const info_auth =
-    'Add-on needs authorization to a Spotify account!' +
-    ' Please specify Client ID and Secret from your Spotify Developer account (app).';
 
   let builder = CardService.newCardBuilder();
   let section = CardService.newCardSection()
-    .setHeader("Authorization Required")
-    .addWidget(CardService.newTextParagraph()
-      .setText(info_auth));
+    .setHeader("Authorization Required");
 
   const service = getOAuthService_();
 
@@ -193,10 +184,24 @@ function configurationCard(event, saved_credentials = false) {
       .setOnClickAction(CardService.newAction()
         .setFunctionName('refreshCard'));
 
+    const redirect_uri = 'https://script.google.com/macros/d/' + ScriptApp.getScriptId() + '/usercallback';
+    const redirect_uri_info = 'NOTE: Before authorizing the add-on,\n' +
+      'add the following redirect URI to\nyour Spotify app settings.\n';
+
     section
+      .addWidget(CardService.newTextParagraph()
+        .setText(redirect_uri_info))
+      .addWidget(CardService.newTextInput()
+        .setMultiline(true)
+        .setTitle('Redirect URI:')
+        .setFieldName('redirect_uri')
+        .setValue(redirect_uri))
+      .addWidget(CardService.newTextParagraph()
+        .setText('\n'))
+      .addWidget(CardService.newDivider())
       .addWidget(CardService.newButtonSet()
         .addButton(button_auth)
-        .addButton(button_refresh));
+        .addButton(button_refresh))
 
   } else {
     let button_save_cred = CardService.newTextButton()
@@ -218,11 +223,17 @@ function configurationCard(event, saved_credentials = false) {
       .setType(CardService.SelectionInputType.CHECK_BOX)
       .addItem('Playback Feature', 'true', false);
 
+    const info_auth =
+      'Add-on needs authorization to a Spotify account!' +
+      ' Please specify Client ID and Secret from your Spotify Developer account (app).';
+
     const info_playback =
-      '\n\n• If you want to change playback from this add-on mark "Playback Feature" checkbox' +
+      '\n• If you want to change playback from this add-on mark "Playback Feature" checkbox' +
       '\n\n• Otherwise, you can still use the add-on to translate and search albums/tracks';
 
     section
+      .addWidget(CardService.newTextParagraph()
+        .setText(info_auth))
       .addWidget(CardService.newTextParagraph()
         .setText(info_playback))
       .addWidget(CardService.newTextInput()
@@ -238,7 +249,7 @@ function configurationCard(event, saved_credentials = false) {
       .addWidget(checkbox_playback)
       .addWidget(CardService.newButtonSet()
         .addButton(button_save_cred)
-        .addButton(button_refresh));
+        .addButton(button_refresh))
 
   }
 
@@ -282,7 +293,12 @@ function dashboardCard(event, background_task_running = PropertiesService.getUse
     return configurationCard();
   }
 
-  let builder = CardService.newCardBuilder();
+  let header = CardService.newCardHeader()
+    .setTitle('Album Translate for Spotify')
+    .setSubtitle('Dashboard Page')
+    .setImageUrl('https://raw.githubusercontent.com/indeliblecanopus/manju/main/add-on-icons/rect111.png');
+
+  let builder = CardService.newCardBuilder().setHeader(header);
 
   builder.addSection(CardService.newCardSection()
     .addWidget(CardService.newTextInput()
