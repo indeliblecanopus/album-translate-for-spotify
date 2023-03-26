@@ -46,9 +46,7 @@ const ONE_MINUTE = 60000;
 /** ------------------------------------------------------------ */
 
 
-
 function reset() {
-
   try {
     resetAddOn();
   } catch (e) {
@@ -96,7 +94,6 @@ function onHomePage() {
 
 
 function refreshCard() {
-
   const service = getOAuthService_();
 
   if (service === null || !service.hasAccess || !service.hasAccess()) {
@@ -149,8 +146,6 @@ function getOAuthService_(credentials) {
 
 
 function configurationCard(event, saved_credentials = false) {
-  Logger.log('entered configurationCard()');
-
 
   let builder = CardService.newCardBuilder();
   let section = CardService.newCardSection()
@@ -258,7 +253,6 @@ function configurationCard(event, saved_credentials = false) {
 
 
 function authCallback(request) {
-  Logger.log('entered authCallback()');
 
   let service = getOAuthService_();
   let authorized;
@@ -285,12 +279,17 @@ function authCallback(request) {
 }
 
 
-function dashboardCard(event, background_task_running = PropertiesService.getUserProperties().getProperty(PROPERTY_SEARCH_IN_PROGRESS)) {
-  Logger.log('entered dashboardCard()');
+function dashboardCard(event, background_task_running) {
+
 
   const service = getOAuthService_();
   if (!service || !service.hasAccess || !service.hasAccess()) {
     return configurationCard();
+  }
+
+  if (!background_task_running) {
+    background_task_running = PropertiesService.getUserProperties().getProperty(PROPERTY_SEARCH_IN_PROGRESS)
+      || PropertiesService.getUserProperties().getProperty(PROPERTY_SEARCH_RESULTS);
   }
 
   let header = CardService.newCardHeader()
@@ -354,7 +353,6 @@ function dashboardCard(event, background_task_running = PropertiesService.getUse
 
 
 function tranlateAlbumTracks(event) {
-  Logger.log('entered tranlateAlbumTracks() func');
 
   const service = getOAuthService_();
   if (!service || !service.hasAccess || !service.hasAccess()) {
@@ -480,7 +478,6 @@ function tranlateAlbumTracks(event) {
 
 
 function albumCard(album_data) {
-  Logger.log('entered albumCard() func');
 
 
 
@@ -559,7 +556,6 @@ function goToDashboard() {
 
 
 function scheduleSearchTracks(event) {
-  Logger.log('entered tranlateAlbumTracks() func');
 
   const service = getOAuthService_();
   if (!service || !service.hasAccess || !service.hasAccess()) {
@@ -905,7 +901,6 @@ function trackCard(track_data) {
 
 
 function addTracksToQueue(event) {
-  Logger.log('entered addTracksToQueue() func');
 
   const service = getOAuthService_();
   if (!service || !service.hasAccess || !service.hasAccess()) {
@@ -992,7 +987,6 @@ function addTracksToQueue(event) {
 
 
 function saveCredentials(event) {
-  Logger.log('entered saveCredentials() func');
 
   if (!event.formInputs.client_id || !event.formInputs.client_secret) {
     const notification = CardService.newNotification()
