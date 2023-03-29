@@ -36,15 +36,18 @@ Then, create and upload standalone App Script project:
 1.  Clone the repo and navigate to the directory.
 
 2.  Create a new project:
-
+       
+       ```bash
        clasp create --type standalone --title "Album Translate for Spotify"
-
+       ```
 
    Note: You can modify the `--title` argument value as you wish.
 
 3.  Push the code:
 
+       ```bash
        clasp push -f
+       ````
 
 **Note**: Alternatively, you can manually create Apps Script project and copy file contents from this repo to it.
 
