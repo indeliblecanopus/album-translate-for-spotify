@@ -1,6 +1,6 @@
-const DEBUG = false;
-const DEBUG_L2 = false;
-const DEBUG_L3 = false;
+const DEBUG = true;
+const DEBUG_L2 = true;
+const DEBUG_L3 = true;
 
 
 /**
@@ -8,7 +8,7 @@ const DEBUG_L3 = false;
  * 
  --------------------------------------------------------------- */
 const PROPERTY_SPOTIFY_CREDENTIALS = 'SPOTIFY_CREDENTIALS'; // {CLIENT_ID: string, CLIENT_SECRET: string} 
-const PROPERTY_SPOTIFY_PLAYBACK_ENABLED = 'SPOTIFY_PLAYBACK_ENABLED';
+const PROPERTY_SPOTIFY_SCOPES_ENABLED = 'SPOTIFY_SCOPES_ENABLED';
 const PROPERTY_SEARCH_IN_PROGRESS = 'SEARCH_IN_PROGRESS';
 
 const PROPERTY_JOB_QUEUE = 'JOB_QUEUE'; // [ {'trigger_id': string, 'task_status': boolean, 'artist_id': string, 'artist_name': string, 'track_name': string}, ...]
@@ -20,7 +20,8 @@ const API_SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
 
 const API_TRANSLATE_URL = 'https://translation.googleapis.com/language/translate/v2/detect';
 
-const API_SPOTIFY_PAYBACK_SCOPES = 'user-read-playback-state user-modify-playback-state';
+const API_SPOTIFY_PAYBACK_SCOPES = 'user-modify-playback-state';
+const API_SPOTIFY_LIBRARY_SCOPES = 'user-library-modify';
 
 const SPOTIFY_LOGO = 'https://raw.githubusercontent.com/indeliblecanopus/album-translate-for-spotify/main/assets/Spotify_Logo.png';
 const SPOTIFY_URL_WEB_PLAYER = 'https://open.spotify.com/';
@@ -38,13 +39,30 @@ const DELIMITER_SETS = [{
 }
 ]
 
+const ERROR_INTERNAL = 'ERROR_INTERNAL';
+const ERROR_INTERNAL_MESSAGE = 'Internal error occured! Please notify support.';
+const ERROR_SPOTIFY_RATE_LIMIT = 'ERROR_SPOTIFY_RATE_LIMIT';
+const ERROR_SPOTIFY_RATE_LIMIT_MESSAGE = 'Spotify API rate limit hit! Please try using the add-on later';
+const MAX_TRACKS_ON_CARD = 30;
+
 const ONE_SECOND = 1000;
 const TEN_SECONDS = 10000;
 const THIRTY_SECONDS = 30000;
 const ONE_MINUTE = 60000;
 
 /** ------------------------------------------------------------ */
+function testProperties() {
+  let script_properties = PropertiesService.getScriptProperties();
+  let user_properties = PropertiesService.getUserProperties();
 
+  // user_properties.deleteProperty(PROPERTY_SEARCH_IN_PROGRESS)
+
+  const results = JSON.parse(user_properties.getProperty(PROPERTY_SEARCH_RESULTS));
+  Logger.log(results.tracks_matched.length);
+
+  Logger.log(script_properties.getProperties());
+  Logger.log(user_properties.getProperties());
+}
 
 function reset() {
   try {
@@ -118,7 +136,12 @@ function logout() {
 function getOAuthService_(credentials) {
 
   if (!credentials) {
-    credentials = JSON.parse(PropertiesService.getUserProperties().getProperty(PROPERTY_SPOTIFY_CREDENTIALS));
+    const saved_credentials = PropertiesService.getUserProperties().getProperty(PROPERTY_SPOTIFY_CREDENTIALS);
+    if (!saved_credentials) {
+      return null;
+    }
+
+    credentials = JSON.parse(saved_credentials);
   }
 
   if (credentials === null) {
@@ -126,7 +149,7 @@ function getOAuthService_(credentials) {
   }
 
   const user_properties = PropertiesService.getUserProperties();
-  const playback_enable = user_properties.getProperty(PROPERTY_SPOTIFY_PLAYBACK_ENABLED);
+  const spotify_scopes_enabled = user_properties.getProperty(PROPERTY_SPOTIFY_SCOPES_ENABLED);
 
   return OAuth2.createService('Spotify')
     .setAuthorizationBaseUrl(API_SPOTIFY_AUTH_URL)
@@ -140,7 +163,7 @@ function getOAuthService_(credentials) {
     .setPropertyStore(PropertiesService.getUserProperties())
     .setLock(LockService.getUserLock())
 
-    .setParam('scope', playback_enable ? API_SPOTIFY_PAYBACK_SCOPES : '')
+    .setParam('scope', spotify_scopes_enabled)
     .setParam('show_dialog', true)
 }
 
@@ -213,6 +236,11 @@ function configurationCard(event, saved_credentials = false) {
       .setOnClickAction(CardService.newAction()
         .setFunctionName('refreshCard'));
 
+    const checkbox_library = CardService.newSelectionInput()
+      .setFieldName('checkbox_library')
+      .setType(CardService.SelectionInputType.CHECK_BOX)
+      .addItem('Library Feature', 'true', false);
+
     const checkbox_playback = CardService.newSelectionInput()
       .setFieldName('checkbox_playback')
       .setType(CardService.SelectionInputType.CHECK_BOX)
@@ -222,15 +250,17 @@ function configurationCard(event, saved_credentials = false) {
       'Add-on needs authorization to a Spotify account!' +
       ' Please specify Client ID and Secret from your Spotify Developer account (app).';
 
-    const info_playback =
+    const info_features_add =
       '\n• If you want to change playback from this add-on mark "Playback Feature" checkbox' +
+      '\n• If you want to save tracks to your library from this add-on mark "Library Feature" checkbox' +
       '\n\n• Otherwise, you can still use the add-on to translate and search albums/tracks';
+
 
     section
       .addWidget(CardService.newTextParagraph()
         .setText(info_auth))
       .addWidget(CardService.newTextParagraph()
-        .setText(info_playback))
+        .setText(info_features_add))
       .addWidget(CardService.newTextInput()
         .setMultiline(true)
         .setTitle('Client ID:')
@@ -242,6 +272,7 @@ function configurationCard(event, saved_credentials = false) {
         .setFieldName('client_secret')
         .setValue(''))
       .addWidget(checkbox_playback)
+      .addWidget(checkbox_library)
       .addWidget(CardService.newButtonSet()
         .addButton(button_save_cred)
         .addButton(button_refresh))
@@ -361,7 +392,7 @@ function tranlateAlbumTracks(event) {
 
   if (!event.formInputs.album_url) {
     const notification = CardService.newNotification()
-      .setText('[ERROR] Album URL empty!');
+      .setText('[ERROR] Album URL empty! Please specify Spotify album URL');
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
@@ -369,11 +400,12 @@ function tranlateAlbumTracks(event) {
   }
 
   const album_url = event.formInputs.album_url[0];
+  DEBUG && Logger.log('album_url: ' + album_url);
   const key = 'https://open.spotify.com/album/';
   const index = album_url.indexOf(key);
   if (index === -1) {
     const notification = CardService.newNotification()
-      .setText('[ERROR] Please specify valid Spotify album URL!');
+      .setText('[ERROR] Album URL non-valid! Please specify valid Spotify album URL!');
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
@@ -394,14 +426,18 @@ function tranlateAlbumTracks(event) {
 
   } catch (e) {
     let notification;
-    if (e.message.includes('invalid id')) {
+
+    if (e.cause === ERROR_INTERNAL) {
+      Logger.log('[ERROR]' + e.message);
       notification = CardService.newNotification()
-        .setText('[ERROR] Invalid Album URL!');
+        .setText(ERROR_INTERNAL_MESSAGE);
+    } else if (e.message.includes('invalid id')) {
+      notification = CardService.newNotification()
+        .setText('[ERROR] Album URL non-valid! Please specify valid Spotify album URL');
     } else {
       notification = CardService.newNotification()
         .setText('[ERROR] ' + e.message);
     }
-
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
@@ -479,8 +515,6 @@ function tranlateAlbumTracks(event) {
 
 function albumCard(album_data) {
 
-
-
   let image = CardService.newImage()
     .setAltText(album_data.name)
     .setOpenLink(CardService.newOpenLink()
@@ -491,28 +525,29 @@ function albumCard(album_data) {
 
   let checkbox_tracks = generateCheckboxList('checkbox_tracks', 'Tracks', album_data.tracks, false);
 
-  const playback_enabled = PropertiesService.getUserProperties().getProperty(PROPERTY_SPOTIFY_PLAYBACK_ENABLED) ? false : true;
+  const spotify_scopes_enabled = PropertiesService.getUserProperties().getProperty(PROPERTY_SPOTIFY_SCOPES_ENABLED);
+  const playback_enabled = spotify_scopes_enabled.indexOf(API_SPOTIFY_PAYBACK_SCOPES) !== -1 ? false : true;
+  const library_enabled = spotify_scopes_enabled.indexOf(API_SPOTIFY_LIBRARY_SCOPES) !== -1 ? false : true;
+
   let button_set_playback = CardService.newButtonSet()
-    .addButton(CardService.newTextButton()
-      .setText('Play Selected')
-      .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
-      .setOnClickAction(CardService.newAction()
-        .setFunctionName('addTracksToQueue')
-        .setParameters({
-          'album_data': JSON.stringify(album_data),
-          'play_now': 'true'
-        }))
-      .setDisabled(playback_enabled))
     .addButton(CardService.newTextButton()
       .setText('Add to Queue')
       .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
       .setOnClickAction(CardService.newAction()
         .setFunctionName('addTracksToQueue')
         .setParameters({
-          'album_data': JSON.stringify(album_data),
-          'play_now': ''
+          'album_data': JSON.stringify(album_data)
         }))
-      .setDisabled(playback_enabled));
+      .setDisabled(playback_enabled))
+    .addButton(CardService.newTextButton()
+      .setText('Add to Library')
+      .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setOnClickAction(CardService.newAction()
+        .setFunctionName('addTracksToLibrary')
+        .setParameters({
+          'album_data': JSON.stringify(album_data),
+        }))
+      .setDisabled(library_enabled));
 
 
   let image_spotify_logo = CardService.newImage()
@@ -550,7 +585,7 @@ function albumCard(album_data) {
 function goToDashboard() {
   return CardService.newActionResponseBuilder()
     .setNavigation(CardService.newNavigation()
-      .updateCard(dashboardCard()))
+      .pushCard(dashboardCard()))
     .build();
 }
 
@@ -575,7 +610,7 @@ function scheduleSearchTracks(event) {
 
   if (!event.formInputs.artist_url) {
     const notification = CardService.newNotification()
-      .setText('[ERROR] Artist URL empty!');
+      .setText('[ERROR] Artist URL empty! Please specify Spotify artist URL');
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
@@ -587,7 +622,7 @@ function scheduleSearchTracks(event) {
   const index = artist_url.indexOf(key);
   if (index === -1) {
     const notification = CardService.newNotification()
-      .setText('[ERROR] Please specify valid Spotify artist URL!');
+      .setText('[ERROR] Artist URL non-valid! Please specify valid Spotify artist URL');
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
@@ -596,7 +631,7 @@ function scheduleSearchTracks(event) {
 
   if (!event.formInputs.track_name) {
     const notification = CardService.newNotification()
-      .setText('[ERROR] Track name empty!');
+      .setText('[ERROR] Track name empty! Please specify the track name to search');
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
@@ -607,7 +642,7 @@ function scheduleSearchTracks(event) {
   Logger.log('track_name: ' + track_name);
   if (track_name.length < 2) {
     const notification = CardService.newNotification()
-      .setText('[ERROR] Please specify valid track name!');
+      .setText('[ERROR] Track name too short! Please specify longer track name to search');
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
@@ -626,12 +661,27 @@ function scheduleSearchTracks(event) {
   try {
     artist_name = spotifyGetArtist(artist_id)?.name;
   } catch (e) {
-    const notification = CardService.newNotification()
-      .setText('[ERROR] Failed to retrieve artist!\n' + e.message);
 
-    return CardService.newActionResponseBuilder()
-      .setNotification(notification)
-      .build();
+    try {
+      artist_name = spotifyGetArtist(artist_id)?.name;
+    } catch (e) {
+      let notification;
+      if (e.cause === ERROR_INTERNAL) {
+        Logger.log('[ERROR]' + e.message);
+        notification = CardService.newNotification()
+          .setText(ERROR_INTERNAL_MESSAGE);
+      } else if (e.cause === ERROR_SPOTIFY_RATE_LIMIT) {
+        notification = CardService.newNotification()
+          .setText(ERROR_SPOTIFY_RATE_LIMIT_MESSAGE);
+      } else {
+        notification = CardService.newNotification()
+          .setText('[ERROR] Failed to retrieve artist! Try different artist URL');
+      }
+
+      return CardService.newActionResponseBuilder()
+        .setNotification(notification)
+        .build();
+    }
   }
 
 
@@ -645,12 +695,26 @@ function scheduleSearchTracks(event) {
       .create();
 
   } catch (e) {
-    const notification = CardService.newNotification()
-      .setText('[ERROR] Background task is running! Can\'t schedule another search now');
 
-    return CardService.newActionResponseBuilder()
-      .setNotification(notification)
-      .build();
+    ScriptApp.getProjectTriggers().forEach(trigger => {
+      ScriptApp.deleteTrigger(trigger);
+    });
+
+    try {
+      trigger = ScriptApp.newTrigger('searchTracks')
+        .timeBased()
+        .after(ONE_SECOND)
+        .create();
+
+    } catch (e) {
+      const notification = CardService.newNotification()
+        .setText('[ERROR] Search task failed to register! Please wait a while and try again');
+
+      return CardService.newActionResponseBuilder()
+        .setNotification(notification)
+        .build();
+
+    }
   }
 
   const trigger_id = trigger.getUniqueId();
@@ -690,17 +754,44 @@ function searchTracks() {
   user_properties.setProperty(PROPERTY_JOB_QUEUE, JSON.stringify(job_queue));
 
   if (job === undefined) {
-    Logger.log('[ERROR] No jobs in the queue! Exiting ...');
-    return;
+    user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
+      'status': false,
+      'track_name': job.track_name
+    }));
+    throw new Error('No jobs in the queue!');
   }
 
   const artist_name = job.artist_name;
-  let tracks = spotifyGetArtistTracks(job.artist_id);
+  let tracks;
+  try {
+    tracks = spotifyGetArtistTracks(job.artist_id);
+  } catch (e) {
+
+    try {
+      tracks = spotifyGetArtistTracks(job.artist_id);
+    } catch (e) {
+      if (e.cause === ERROR_SPOTIFY_RATE_LIMIT) {
+        user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
+          'status': false,
+          'track_name': job.track_name
+        }));
+      } else {
+        user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
+          'status': false,
+          'track_name': job.track_name
+        }));
+
+        throw new Error(e.message);
+      }
+    }
+  }
+
   const track_name = job.track_name.toLowerCase();
 
   let tracks_matched = [];
   let translate_flag = false;
   let album_index = 0;
+  let errors_translation = 0;
   for (const album of tracks) {
     let tracks_as_string = album.tracks.reduce((accumulator, currentValue) => accumulator + currentValue.name + ',', '');
 
@@ -718,7 +809,28 @@ function searchTracks() {
 
       tracks_as_string = tracks_as_string.replaceAll(',', del_set.delimiter_track)
 
-      const translation = LanguageApp.translate(tracks_as_string, '', 'en');
+      let translation;
+      try {
+        translation = LanguageApp.translate(tracks_as_string, '', 'en');
+      } catch (e) {
+        Logger.log('[ERROR] ' + e);
+
+        try {
+          translation = LanguageApp.translate(tracks_as_string, '', 'en');
+        } catch (e) {
+          Logger.log('[ERROR] ' + e);
+
+          if (errors_translation > 3) {
+            user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
+              'status': false,
+              'track_name': job.track_name
+            }));
+
+            throw new Error(e.message);
+          }
+          errors_translation += 1;
+        }
+      }
 
       let tracks_translated = translation.split(del_set.delimiter_track);
       tracks_translated.pop();
@@ -780,7 +892,7 @@ function showSearchResults(event) {
 
   if (PropertiesService.getUserProperties().getProperty(PROPERTY_SEARCH_IN_PROGRESS)) {
     const notification = CardService.newNotification()
-      .setText('Search in progress! Try again later');
+      .setText('Search in progress! Try retrieving results later');
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
@@ -821,7 +933,7 @@ function showSearchResults(event) {
     }
   } else {
     const notification = CardService.newNotification()
-      .setText('Search/Translation part failed!');
+      .setText('Search failed! You might have reached daily API limits');
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
@@ -836,19 +948,11 @@ function trackCard(track_data) {
 
   let section_tracks = generateCheckboxListAlbum(track_data.tracks_matched);
 
-  const playback_enabled = PropertiesService.getUserProperties().getProperty(PROPERTY_SPOTIFY_PLAYBACK_ENABLED) ? false : true;
+  const spotify_scopes_enabled = PropertiesService.getUserProperties().getProperty(PROPERTY_SPOTIFY_SCOPES_ENABLED);
+  const playback_enabled = spotify_scopes_enabled.indexOf(API_SPOTIFY_PAYBACK_SCOPES) !== -1 ? false : true;
+  const library_enabled = spotify_scopes_enabled.indexOf(API_SPOTIFY_LIBRARY_SCOPES) !== -1 ? false : true;
+
   let button_set_playback = CardService.newButtonSet()
-    .addButton(CardService.newTextButton()
-      .setText('Play Selected')
-      .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
-      .setOnClickAction(CardService.newAction()
-        .setFunctionName('addTracksToQueue')
-        .setParameters({
-          'track_data': JSON.stringify(track_data.tracks_matched),
-          'card_type': 'search',
-          'play_now': 'true'
-        }))
-      .setDisabled(playback_enabled))
     .addButton(CardService.newTextButton()
       .setText('Add to Queue')
       .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
@@ -856,10 +960,19 @@ function trackCard(track_data) {
         .setFunctionName('addTracksToQueue')
         .setParameters({
           'track_data': JSON.stringify(track_data.tracks_matched),
-          'card_type': 'search',
-          'play_now': ''
+          'card_type': 'search'
         }))
-      .setDisabled(playback_enabled));
+      .setDisabled(playback_enabled))
+    .addButton(CardService.newTextButton()
+      .setText('Add to Library')
+      .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setOnClickAction(CardService.newAction()
+        .setFunctionName('addTracksToLibrary')
+        .setParameters({
+          'track_data': JSON.stringify(track_data.tracks_matched),
+          'card_type': 'search'
+        }))
+      .setDisabled(library_enabled));
 
 
   let artist_paragraph;
@@ -900,6 +1013,120 @@ function trackCard(track_data) {
 }
 
 
+function addTracksToLibrary(event) {
+  const service = getOAuthService_();
+  if (!service || !service.hasAccess || !service.hasAccess()) {
+    return configurationCard();
+  }
+
+  let errors = 0;
+  let total_tracks = 0;
+  if (event.parameters.card_type === 'search') {
+
+    if (!event.formInputs || Object.entries(event.formInputs).length === 0) {
+      const notification = CardService.newNotification()
+        .setText('[ERROR] No tracks selected! Please select at least one track');
+
+      return CardService.newActionResponseBuilder()
+        .setNotification(notification)
+        .build();
+    }
+
+
+    for (const key in event.formInputs) {
+      if (Object.hasOwnProperty.call(event.formInputs, key)) {
+        DEBUG_L3 && Logger.log(event.formInputs[key]);
+
+        try {
+          spotifyAddTracksToUserLibrary(event.formInputs[key]);
+        } catch (e) {
+
+          if (e.cause === ERROR_INTERNAL) {
+            Logger.log('[ERROR]' + e.message);
+            const notification = CardService.newNotification()
+              .setText(ERROR_INTERNAL_MESSAGE);
+
+            return CardService.newActionResponseBuilder()
+              .setNotification(notification)
+              .build();
+          } else {
+            try {
+              spotifyAddTracksToUserLibrary(event.formInputs[key]);
+            } catch (e) {
+              Logger.log('[ERROR]' + e.message);
+              errors += event.formInputs[key].length;
+            }
+          }
+        }
+        total_tracks += event.formInputs[key].length;
+      }
+    }
+
+  } else {
+
+    if (!event.formInputs.checkbox_tracks) {
+      const notification = CardService.newNotification()
+        .setText('[ERROR] No tracks selected! Please select at least one track.');
+
+      return CardService.newActionResponseBuilder()
+        .setNotification(notification)
+        .build();
+    }
+
+    DEBUG_L3 && Logger.log(event.formInputs.checkbox_tracks);
+
+    try {
+      spotifyAddTracksToUserLibrary(event.formInputs.checkbox_tracks)
+    } catch (e) {
+
+      if (e.cause === ERROR_INTERNAL) {
+        Logger.log('[ERROR]' + e.message);
+        const notification = CardService.newNotification()
+          .setText(ERROR_INTERNAL_MESSAGE);
+
+        return CardService.newActionResponseBuilder()
+          .setNotification(notification)
+          .build();
+      } else {
+        try {
+          spotifyAddTracksToUserLibrary(event.formInputs.checkbox_tracks);
+        } catch (e) {
+          Logger.log('[ERROR]' + e.message);
+          errors += event.formInputs.checkbox_tracks.length;
+        }
+      }
+
+    }
+    total_tracks = event.formInputs.checkbox_tracks.length;
+  }
+
+  if (errors === total_tracks) {
+    const notification = CardService.newNotification()
+      .setText('Tracks could not be added to the library! Please contact support');
+
+    return CardService.newActionResponseBuilder()
+      .setNotification(notification)
+      .build();
+
+  } else if (errors > 0) {
+    const notification = CardService.newNotification()
+      .setText('Some tracks could not be added to the library!');
+
+    return CardService.newActionResponseBuilder()
+      .setNotification(notification)
+      .build();
+
+  } else {
+    const notification = CardService.newNotification()
+      .setText('All tracks successfully added to the library!');
+
+    return CardService.newActionResponseBuilder()
+      .setNotification(notification)
+      .build();
+  }
+}
+
+
 function addTracksToQueue(event) {
 
   const service = getOAuthService_();
@@ -907,14 +1134,13 @@ function addTracksToQueue(event) {
     return configurationCard();
   }
 
+  let errors = 0;
+  let total_tracks = 0;
   if (event.parameters.card_type === 'search') {
-
-    Logger.log(event.parameters.track_data.toString());
-    Logger.log(JSON.stringify(event.formInputs));
 
     if (!event.formInputs || Object.entries(event.formInputs).length === 0) {
       const notification = CardService.newNotification()
-        .setText('[ERROR] No tracks selected!');
+        .setText('[ERROR] No tracks selected! Please select at least one track.');
 
       return CardService.newActionResponseBuilder()
         .setNotification(notification)
@@ -923,19 +1149,28 @@ function addTracksToQueue(event) {
 
     for (const key in event.formInputs) {
       if (Object.hasOwnProperty.call(event.formInputs, key)) {
+        DEBUG_L3 && Logger.log(event.formInputs[key]);
         for (const track_id of event.formInputs[key]) {
           try {
             spotifyAddTrackToPlaybackQueue(track_id)
           } catch (e) {
 
-            const notification = CardService.newNotification()
-              .setText('[ERROR] ' + e.message);
+            let notification;
+            if (e.message.includes('Player command failed: No active device found')) {
+              notification = CardService.newNotification()
+                .setText('Your Spotify player is not active! Please play some music to add tracks the queue');
 
-            return CardService.newActionResponseBuilder()
-              .setNotification(notification)
-              .build();
+              return CardService.newActionResponseBuilder()
+                .setNotification(notification)
+                .build();
+            } else {
+              Logger.log(e.message);
+              errors += 1;
+            }
+
           }
         }
+        total_tracks += event.formInputs[key].length;
       }
     }
 
@@ -943,7 +1178,7 @@ function addTracksToQueue(event) {
 
     if (!event.formInputs.checkbox_tracks) {
       const notification = CardService.newNotification()
-        .setText('[ERROR] No tracks selected!');
+        .setText('[ERROR] No tracks selected! Please select at least one track.');
 
       return CardService.newActionResponseBuilder()
         .setNotification(notification)
@@ -957,32 +1192,49 @@ function addTracksToQueue(event) {
         spotifyAddTrackToPlaybackQueue(track_id)
       } catch (e) {
 
-        const notification = CardService.newNotification()
-          .setText('[ERROR] ' + e.message);
+        let notification;
+        if (e.message.includes('Player command failed: No active device found')) {
+          notification = CardService.newNotification()
+            .setText('Your Spotify player is not active! Please play some music to add tracks the queue');
 
-        return CardService.newActionResponseBuilder()
-          .setNotification(notification)
-          .build();
+          return CardService.newActionResponseBuilder()
+            .setNotification(notification)
+            .build();
+        } else {
+          Logger.log(e.message);
+          errors += 1;
+        }
       }
     }
+    total_tracks = event.formInputs.checkbox_tracks.length;
   }
 
 
-  if (event.parameters.play_now) {
-    try {
-      spotifySkipToNext();
-    } catch (e) {
+  if (errors === total_tracks) {
+    const notification = CardService.newNotification()
+      .setText('Tracks could not be added to the queue! Please contact support');
 
-      const notification = CardService.newNotification()
-        .setText('[ERROR] ' + e.message);
+    return CardService.newActionResponseBuilder()
+      .setNotification(notification)
+      .build();
 
-      return CardService.newActionResponseBuilder()
-        .setNotification(notification)
-        .build();
-    }
+  } else if (errors > 0) {
+    const notification = CardService.newNotification()
+      .setText('Some tracks could not be added to the queue!');
+
+    return CardService.newActionResponseBuilder()
+      .setNotification(notification)
+      .build();
+
+  } else {
+    const notification = CardService.newNotification()
+      .setText('All tracks successfully added to the queue!');
+
+    return CardService.newActionResponseBuilder()
+      .setNotification(notification)
+      .build();
   }
 
-  return albumCard(JSON.parse(event.parameters.album_data));
 }
 
 
@@ -990,7 +1242,7 @@ function saveCredentials(event) {
 
   if (!event.formInputs.client_id || !event.formInputs.client_secret) {
     const notification = CardService.newNotification()
-      .setText('[ERROR] The Client ID and Client Secret fields empty!');
+      .setText('[ERROR] The Client ID and Client Secret fields empty! Please specify credentials');
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
@@ -1000,16 +1252,20 @@ function saveCredentials(event) {
   const user_properties = PropertiesService.getUserProperties();
 
   const credentials = {
-    'CLIENT_ID': event.formInputs.client_id[0],
-    'CLIENT_SECRET': event.formInputs.client_secret[0]
+    'CLIENT_ID': event.formInputs.client_id[0].trim(),
+    'CLIENT_SECRET': event.formInputs.client_secret[0].trim()
   };
 
+  let spotify_scopes_enabled = '';
   if (event.formInputs.checkbox_playback && event.formInputs.checkbox_playback[0] === 'true') {
-    user_properties.setProperty(PROPERTY_SPOTIFY_PLAYBACK_ENABLED, 'true');
-  } else {
-    user_properties.setProperty(PROPERTY_SPOTIFY_PLAYBACK_ENABLED, '');
+    spotify_scopes_enabled += API_SPOTIFY_PAYBACK_SCOPES;
   }
 
+  if (event.formInputs.checkbox_library && event.formInputs.checkbox_library[0] === 'true') {
+    spotify_scopes_enabled += ' ' + API_SPOTIFY_LIBRARY_SCOPES;
+  }
+
+  user_properties.setProperty(PROPERTY_SPOTIFY_SCOPES_ENABLED, spotify_scopes_enabled);
   user_properties.setProperty(PROPERTY_SPOTIFY_CREDENTIALS, JSON.stringify(credentials));
   user_properties.setProperty(PROPERTY_JOB_QUEUE, JSON.stringify([]));
 
@@ -1021,7 +1277,12 @@ function generateCheckboxListAlbum(album_data) {
 
   let section = CardService.newCardSection();
 
+  let album_index = 0;
   for (const item of album_data) {
+
+    if (album_index >= MAX_TRACKS_ON_CARD) {
+      break;
+    }
 
     let image = CardService.newImage()
       .setAltText(item.album_name)
@@ -1041,6 +1302,8 @@ function generateCheckboxListAlbum(album_data) {
     })
 
     section.addWidget(selection_input);
+
+    album_index += 1;
   }
 
   return section;

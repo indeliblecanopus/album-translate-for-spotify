@@ -3,7 +3,6 @@
  * 
  --------------------------------------------------------------- */
 const API_SPOTIFY_ERROR_PREMIUM = 'PREMIUM_REQUIRED';
-const API_SPOTIFY_ERROR_RATE_LIMIT = 'RATE_LIMIT';
 
 const API_SPOTIFY_ALBUMS = 'albums';
 const API_SPOTIFY_ARTISTS = 'artists';
@@ -11,35 +10,50 @@ const API_SPOTIFY_TRACKS = 'tracks';
 const API_SPOTIFY_EPISODES = 'episodes';
 const API_SPOTIFY_SEARCH = 'search';
 
-const API_SPOTIFY_PLAYBACK_STATE = 'me/player';
 const API_SPOTIFY_PLAYBACK_QUEUE = 'me/player/queue';
 const API_SPOTIFY_SKIP_NEXT = 'me/player/next';
+const API_SPOTIFY_USER_LIBRARY = 'me/tracks';
+
 
 /** ------------------------------------------------------------ */
 
+function spotifyAddTracksToUserLibrary(track_ids) {
+  if (!track_ids?.length || track_ids.length === 0) {
+    throw new TypeError('param {track_ids} must be array', {
+      cause: ERROR_INTERNAL
+    });
+  }
 
-function spotifyGetPlaybackState() {
-  let url = API_SPOTIFY_BASE_URL + API_SPOTIFY_PLAYBACK_STATE;
+  const MAX_TRACK_LIMIT = 50;
+  let url = API_SPOTIFY_BASE_URL + API_SPOTIFY_USER_LIBRARY;
 
-  return sendSpotifyRequest('GET', url);
-}
+  track_ids = track_ids.map(id => id.substring(id.indexOf('track:') + 6, id.length));
 
+  let request = {
+    'ids': [],
+  };
 
-function spotifySkipToNext() {
-  let url = API_SPOTIFY_BASE_URL + API_SPOTIFY_SKIP_NEXT;
+  if (track_ids.length > MAX_TRACK_LIMIT) {
 
-  return sendSpotifyRequest('POST', url);
+    while (track_ids.length > 0) {
+      request.ids = track_ids.splice(0, MAX_TRACK_LIMIT);
+
+      sendSpotifyRequest('PUT', url, request);
+    }
+
+  } else {
+    request.ids = track_ids;
+
+    sendSpotifyRequest('PUT', url, request);
+  }
+
 }
 
 
 function spotifyAddTrackToPlaybackQueue(track_id) {
-  let url = API_SPOTIFY_BASE_URL + API_SPOTIFY_PLAYBACK_QUEUE;
+  let url = API_SPOTIFY_BASE_URL + API_SPOTIFY_PLAYBACK_QUEUE + '?uri=' + track_id;
 
-  const params = {
-    'uri': track_id
-  }
-
-  return sendSpotifyRequest('POST', url, params);
+  return sendSpotifyRequest('POST', url);
 }
 
 
@@ -183,7 +197,9 @@ function spotifyGetAlbumTracks(album_id, total_tracks, offset) {
   let url_req;
   if (offset) {
     if (!Number.isInteger(offset)) {
-      throw new TypeError('param offset must be integer');
+      throw new TypeError('param {offset} must be integer', {
+        cause: ERROR_INTERNAL
+      });
     }
 
     url_req = url + '&offset=' + offset;
@@ -228,6 +244,8 @@ function spotifyGetAlbumTracks(album_id, total_tracks, offset) {
  * @return {Object} the response payload
  */
 function sendSpotifyRequest(method, url, request) {
+  DEBUG_L2 && Logger.log('Request url: ' + url)
+
   const service = getOAuthService_();
   let payload = request !== undefined ? JSON.stringify(request) : null;
   let options = {
@@ -243,15 +261,17 @@ function sendSpotifyRequest(method, url, request) {
 
   let response = UrlFetchApp.fetch(url, options);
   let responseStatusCode = response.getResponseCode();
-  if (responseStatusCode !== 200 && responseStatusCode !== 201) {
+  if (responseStatusCode !== 200 && responseStatusCode !== 201 && responseStatusCode !== 204) {
     const json = response.getContentText();
 
     if (responseStatusCode === 429) {
       const headers = response.getAllHeaders();
-      Logger.log('Retry-After: ' + headers['Retry-After'])
-      throw new Error('Spotify API rate limit hit!', {
-        cause: API_SPOTIFY_ERROR_RATE_LIMIT
-      });
+      DEBUG_L2 && Logger.log('Retry-After: ' + headers['Retry-After'])
+      throw new Error('', { cause: ERROR_SPOTIFY_RATE_LIMIT });
+    }
+
+    if (json.length === 0) {
+      throw new Error('Unknown API error occured! Please contact support if error persists');
     }
 
     const data = JSON.parse(json);
@@ -259,14 +279,14 @@ function sendSpotifyRequest(method, url, request) {
 
     if (error) {
       if (error.reason === API_SPOTIFY_ERROR_PREMIUM) {
-        throw new Error('Spotify Premium subscription required for this feature!', {
-          cause: API_SPOTIFY_ERROR_PREMIUM
-        });
+        throw new Error('Spotify Premium subscription is required for this feature!');
       } else {
-        throw new Error(error['message']);
+        throw new Error(error['message'], {
+          cause: ERROR_INTERNAL
+        });
       }
     } else {
-      throw new Error('Unknown error occured!');
+      throw new Error('Unknown API error occured! Please contact support if error persists');
     }
   }
 
@@ -275,7 +295,5 @@ function sendSpotifyRequest(method, url, request) {
     let json_parsed = JSON.parse(json);
 
     return json_parsed;
-  } else {
-    throw new Error('Unknown error occured!');
   }
 }
