@@ -1,6 +1,6 @@
-const DEBUG = true;
-const DEBUG_L2 = true;
-const DEBUG_L3 = true;
+const DEBUG = false;
+const DEBUG_L2 = false;
+const DEBUG_L3 = false;
 
 
 /**

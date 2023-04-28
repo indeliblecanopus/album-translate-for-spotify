@@ -124,10 +124,16 @@ Consider that, this feature similar to the `Translate` utilizes quota-limited se
 ### Playback Feature (Optional)
 
 
-`Playback` feature is optional and users can choose to enable it by marking a corresponding checkbox initially, during the add-on authorization. The feature can be utilized to add multiple tracks to the current player queue. You can choose tracks from the displayed results of either `Translate` or `Search` features.
+`Playback` feature is optional and users can choose to enable it by marking a corresponding checkbox during the initial add-on authorization process. The feature can be utilized to add multiple tracks to the queue of the active player. You can select tracks from the results of either `Translate` or `Search` features.
 
 
 **Note**: This feature is limited (by Spotify) to only users with Premium subscription plans.
+
+
+### Library Feature (Optional)
+
+
+`Library` feature is optional and users can choose to enable it by marking a corresponding checkbox during the initial add-on authorization process. The feature can be utilized to add multiple tracks to the user's library. You can select tracks from the results of either `Translate` or `Search` features.
 
 
 ## License
