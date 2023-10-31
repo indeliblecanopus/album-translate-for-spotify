@@ -283,7 +283,10 @@ function sendSpotifyRequest(method, url, request) {
 
     if (error) {
       if (error.reason === API_SPOTIFY_ERROR_PREMIUM) {
-        throw new Error('Spotify Premium subscription is required for this feature!');
+        throw new Error('Spotify Premium subscription is required for this feature!', {
+          cause: API_SPOTIFY_ERROR_PREMIUM
+        }
+        );
       } else {
         throw new Error(error['message'], {
           cause: ERROR_INTERNAL

@@ -2,7 +2,7 @@ const DEBUG = false;
 const DEBUG_L2 = false;
 const DEBUG_L3 = false;
 
-
+const TEST_SEARCH_TASK_TIMEOUT_HANDLING = false;
 /**
  * Script Properties and other miscellaneous constants
  * 
@@ -17,8 +17,6 @@ const PROPERTY_SEARCH_RESULTS = 'SEARCH_RESULTS'; // {status: boolean, matched_t
 const API_SPOTIFY_BASE_URL = 'https://api.spotify.com/v1/';
 const API_SPOTIFY_AUTH_URL = 'https://accounts.spotify.com/authorize';
 const API_SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
-
-const API_TRANSLATE_URL = 'https://translation.googleapis.com/language/translate/v2/detect';
 
 const API_SPOTIFY_PAYBACK_SCOPES = 'user-modify-playback-state';
 const API_SPOTIFY_LIBRARY_SCOPES = 'user-library-modify';
@@ -49,20 +47,18 @@ const ONE_SECOND = 1000;
 const TEN_SECONDS = 10000;
 const THIRTY_SECONDS = 30000;
 const ONE_MINUTE = 60000;
+const ONE_HOUR = 60 * ONE_MINUTE;
+const TWENTY_FOUR_HOUR = 24 * ONE_HOUR;
 
 /** ------------------------------------------------------------ */
 function testProperties() {
   let script_properties = PropertiesService.getScriptProperties();
   let user_properties = PropertiesService.getUserProperties();
 
-  // user_properties.deleteProperty(PROPERTY_SEARCH_IN_PROGRESS)
-
-  const results = JSON.parse(user_properties.getProperty(PROPERTY_SEARCH_RESULTS));
-  Logger.log(results.tracks_matched.length);
-
   Logger.log(script_properties.getProperties());
   Logger.log(user_properties.getProperties());
 }
+
 
 function reset() {
   try {
@@ -318,7 +314,7 @@ function dashboardCard(event, background_task_running) {
     return configurationCard();
   }
 
-  if (!background_task_running) {
+  if (background_task_running === undefined) {
     background_task_running = PropertiesService.getUserProperties().getProperty(PROPERTY_SEARCH_IN_PROGRESS)
       || PropertiesService.getUserProperties().getProperty(PROPERTY_SEARCH_RESULTS);
   }
@@ -365,6 +361,12 @@ function dashboardCard(event, background_task_running) {
         .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
         .setOnClickAction(CardService.newAction()
           .setFunctionName('showSearchResults'))
+        .setDisabled(!background_task_running ? true : false))
+      .addButton(CardService.newTextButton()
+        .setText('Delete Previous Search Task')
+        .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+        .setOnClickAction(CardService.newAction()
+          .setFunctionName('resetSearchTask'))
         .setDisabled(!background_task_running ? true : false)))
 
   );
@@ -719,8 +721,17 @@ function scheduleSearchTracks(event) {
 
   const trigger_id = trigger.getUniqueId();
 
+  let trigger_date;
+  if (TEST_SEARCH_TASK_TIMEOUT_HANDLING) {
+    trigger_date = new Date().toISOString();
+  } else {
+    const today = new Date();
+    trigger_date = new Date(today.getFullYear(), today.getMonth(), today.getDay() - 1).toISOString();
+  }
+
   const new_job = {
     'trigger_id': trigger_id,
+    'trigger_date': trigger_date,
     'task_status': false,
     'artist_id': artist_id,
     'artist_name': artist_name,
@@ -751,7 +762,10 @@ function searchTracks() {
   if (job_queue !== null) {
     job = job_queue.shift();
   }
-  user_properties.setProperty(PROPERTY_JOB_QUEUE, JSON.stringify(job_queue));
+  
+  if (TEST_SEARCH_TASK_TIMEOUT_HANDLING) {
+    throw new Error('TEST_SEARCH_TASK_TIMEOUT_HANDLING');
+  }
 
   if (job === undefined) {
     user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
@@ -793,6 +807,10 @@ function searchTracks() {
   let album_index = 0;
   let errors_translation = 0;
   for (const album of tracks) {
+    if (!album.tracks.length) {
+      continue;
+    }
+
     let tracks_as_string = album.tracks.reduce((accumulator, currentValue) => accumulator + currentValue.name + ',', '');
 
     let album_tracks_matched = {
@@ -881,16 +899,51 @@ function searchTracks() {
     }));
   }
 
+  user_properties.setProperty(PROPERTY_JOB_QUEUE, JSON.stringify([]));
   user_properties.setProperty(PROPERTY_SEARCH_IN_PROGRESS, '');
+}
+
+
+function resetSearchTask(event) {
+  const user_properties = PropertiesService.getUserProperties();
+  user_properties.deleteProperty(PROPERTY_SEARCH_IN_PROGRESS)
+  user_properties.deleteProperty(PROPERTY_SEARCH_RESULTS);
+
+
+  return CardService.newActionResponseBuilder()
+    .setNotification(CardService.newNotification()
+      .setText('Previous search task successfully deleted!'))
+    .setNavigation(CardService.newNavigation()
+      .updateCard(dashboardCard({}, false)))
+    .build();
 }
 
 
 function showSearchResults(event) {
   const user_properties = PropertiesService.getUserProperties();
-  let search_results = JSON.parse(user_properties.getProperty(PROPERTY_SEARCH_RESULTS));
-  user_properties.deleteProperty(PROPERTY_SEARCH_RESULTS);
 
-  if (PropertiesService.getUserProperties().getProperty(PROPERTY_SEARCH_IN_PROGRESS)) {
+  let job_queue = JSON.parse(user_properties.getProperty(PROPERTY_JOB_QUEUE));
+
+  let job;
+  if (job_queue !== null) {
+    job = job_queue.shift();
+  }
+
+  if (job && (new Date().getTime() - new Date(job.trigger_date).getTime() >= ONE_HOUR)) {
+    // Handle the case when searchTrack clock trigger times out
+    const notification = CardService.newNotification()
+      .setText('Search failed! Please try a new search query');
+
+    user_properties.deleteProperty(PROPERTY_SEARCH_IN_PROGRESS);
+
+    return CardService.newActionResponseBuilder()
+      .setNotification(notification)
+      .setNavigation(CardService.newNavigation()
+        .updateCard(dashboardCard({}, false)))
+      .build();
+  }
+
+  if (user_properties.getProperty(PROPERTY_SEARCH_IN_PROGRESS)) {
     const notification = CardService.newNotification()
       .setText('Search in progress! Try retrieving results later');
 
@@ -899,12 +952,17 @@ function showSearchResults(event) {
       .build();
   }
 
+  let search_results = JSON.parse(user_properties.getProperty(PROPERTY_SEARCH_RESULTS));
+  user_properties.deleteProperty(PROPERTY_SEARCH_RESULTS);
+
   if (!search_results) {
     const notification = CardService.newNotification()
       .setText('No search results found! Please try a new search query');
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
+      .setNavigation(CardService.newNavigation()
+        .updateCard(dashboardCard({}, false)))
       .build();
   }
 
@@ -914,6 +972,8 @@ function showSearchResults(event) {
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
+      .setNavigation(CardService.newNavigation()
+        .updateCard(dashboardCard({}, false)))
       .build();
   }
 
@@ -929,6 +989,8 @@ function showSearchResults(event) {
 
       return CardService.newActionResponseBuilder()
         .setNotification(notification)
+        .setNavigation(CardService.newNavigation()
+          .updateCard(dashboardCard({}, false)))
         .build();
     }
   } else {
@@ -937,6 +999,8 @@ function showSearchResults(event) {
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
+      .setNavigation(CardService.newNavigation()
+        .updateCard(dashboardCard({}, false)))
       .build();
   }
 
@@ -1163,6 +1227,15 @@ function addTracksToQueue(event) {
               return CardService.newActionResponseBuilder()
                 .setNotification(notification)
                 .build();
+
+            } else if (e.cause === API_SPOTIFY_ERROR_PREMIUM) {
+              notification = CardService.newNotification()
+                .setText('Track(s) could not be added to the queue! Premium Spotify subscription is needed for this feature');
+
+              return CardService.newActionResponseBuilder()
+                .setNotification(notification)
+                .build();
+
             } else {
               Logger.log(e.message);
               errors += 1;
@@ -1200,6 +1273,15 @@ function addTracksToQueue(event) {
           return CardService.newActionResponseBuilder()
             .setNotification(notification)
             .build();
+
+        } else if (e.cause === API_SPOTIFY_ERROR_PREMIUM) {
+          notification = CardService.newNotification()
+            .setText('Track(s) could not be added to the queue! Premium Spotify subscription is needed for this feature');
+
+          return CardService.newActionResponseBuilder()
+            .setNotification(notification)
+            .build();
+
         } else {
           Logger.log(e.message);
           errors += 1;
