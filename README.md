@@ -87,7 +87,7 @@ Make sure to save changes.
 
 6. Go back to add-on and click the `Authorize` button and follow the pop-up window.
 
-7. After authorization status message is displayed, you should close the pop-ip window and
+7. After authorization status message is displayed, you should close the pop-up window and
 refresh the add-on to navigate to its dashboard, and then you're all set.
 
 

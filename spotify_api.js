@@ -262,7 +262,7 @@ function sendSpotifyRequest(method, url, request) {
   let response = UrlFetchApp.fetch(url, options);
   let responseStatusCode = response.getResponseCode();
   if (responseStatusCode !== 200 && responseStatusCode !== 201 && responseStatusCode !== 204) {
-    const json = response.getContentText();
+    const response_content = response.getContentText();
 
     if (responseStatusCode === 429) {
       const headers = response.getAllHeaders();
@@ -270,12 +270,16 @@ function sendSpotifyRequest(method, url, request) {
       throw new Error('', { cause: ERROR_SPOTIFY_RATE_LIMIT });
     }
 
-    if (json.length === 0) {
+    if (response_content.includes('User not registered in the Developer Dashboard')) {
+      throw new Error('Current Spotify user is not registered! Please register additional users in Spotify Developer Dashbooard ');
+    }
+
+    if (response_content.length === 0 || response_content === '') {
       throw new Error('Unknown API error occured! Please contact support if error persists');
     }
 
-    const data = JSON.parse(json);
-    const error = data['error'];
+    const response_json = JSON.parse(response_content);
+    const error = response_json['error'];
 
     if (error) {
       if (error.reason === API_SPOTIFY_ERROR_PREMIUM) {
@@ -290,10 +294,8 @@ function sendSpotifyRequest(method, url, request) {
     }
   }
 
-  const json = response.getContentText();
-  if (json.length !== 0) {
-    let json_parsed = JSON.parse(json);
-
-    return json_parsed;
+  const response_content = response.getContentText();
+  if (response_content.length !== 0) {
+    return JSON.parse(response_content);
   }
 }
