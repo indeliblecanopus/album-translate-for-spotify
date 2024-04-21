@@ -185,6 +185,7 @@ function configurationCard(event, saved_credentials = false) {
     let button_auth = CardService.newTextButton()
       .setText('Authorize')
       .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setBackgroundColor('#1db970')
       .setDisabled(false)
       .setOpenLink(CardService.newOpenLink()
         .setUrl(url_auth)
@@ -221,6 +222,7 @@ function configurationCard(event, saved_credentials = false) {
     let button_save_cred = CardService.newTextButton()
       .setText('Save')
       .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setBackgroundColor('#1db970')
       .setOnClickAction(CardService.newAction()
         .setFunctionName('saveCredentials'))
       .setDisabled(false);
@@ -336,6 +338,7 @@ function dashboardCard(event, background_task_running) {
       .addButton(CardService.newTextButton()
         .setText('Translate')
         .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+        .setBackgroundColor('#1db970')
         .setOnClickAction(CardService.newAction()
           .setFunctionName('tranlateAlbumTracks'))
         .setDisabled(false)))
@@ -353,18 +356,21 @@ function dashboardCard(event, background_task_running) {
       .addButton(CardService.newTextButton()
         .setText('Search')
         .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+        .setBackgroundColor('#1db970')
         .setOnClickAction(CardService.newAction()
           .setFunctionName('scheduleSearchTracks'))
         .setDisabled(background_task_running ? true : false))
       .addButton(CardService.newTextButton()
         .setText('Show Results')
         .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+        .setBackgroundColor('#1db970')
         .setOnClickAction(CardService.newAction()
           .setFunctionName('showSearchResults'))
         .setDisabled(!background_task_running ? true : false))
       .addButton(CardService.newTextButton()
         .setText('Delete Previous Search Task')
         .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+        .setBackgroundColor('#1db970')
         .setOnClickAction(CardService.newAction()
           .setFunctionName('resetSearchTask'))
         .setDisabled(!background_task_running ? true : false)))
@@ -376,6 +382,7 @@ function dashboardCard(event, background_task_running) {
     .setPrimaryButton(CardService.newTextButton()
       .setText("Go to Dashboard")
       .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setBackgroundColor('#1db970')
       .setOnClickAction(CardService.newAction()
         .setFunctionName('dashboardCard')));
 
@@ -535,6 +542,7 @@ function albumCard(album_data) {
     .addButton(CardService.newTextButton()
       .setText('Add to Queue')
       .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setBackgroundColor('#1db970')
       .setOnClickAction(CardService.newAction()
         .setFunctionName('addTracksToQueue')
         .setParameters({
@@ -544,6 +552,7 @@ function albumCard(album_data) {
     .addButton(CardService.newTextButton()
       .setText('Add to Library')
       .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setBackgroundColor('#1db970')
       .setOnClickAction(CardService.newAction()
         .setFunctionName('addTracksToLibrary')
         .setParameters({
@@ -574,6 +583,7 @@ function albumCard(album_data) {
     .setPrimaryButton(CardService.newTextButton()
       .setText("Go to Dashboard")
       .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setBackgroundColor('#1db970')
       .setOnClickAction(CardService.newAction()
         .setFunctionName('goToDashboard')));
 
@@ -1048,6 +1058,7 @@ function trackCard(track_data) {
     .addButton(CardService.newTextButton()
       .setText('Add to Queue')
       .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setBackgroundColor('#1db970')
       .setOnClickAction(CardService.newAction()
         .setFunctionName('addTracksToQueue')
         .setParameters({
@@ -1058,6 +1069,7 @@ function trackCard(track_data) {
     .addButton(CardService.newTextButton()
       .setText('Add to Library')
       .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setBackgroundColor('#1db970')
       .setOnClickAction(CardService.newAction()
         .setFunctionName('addTracksToLibrary')
         .setParameters({
@@ -1095,6 +1107,7 @@ function trackCard(track_data) {
     .setPrimaryButton(CardService.newTextButton()
       .setText("Go to Dashboard")
       .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setBackgroundColor('#1db970')
       .setOnClickAction(CardService.newAction()
         .setFunctionName('dashboardCard')));
 
