@@ -14,6 +14,8 @@ const PROPERTY_SEARCH_IN_PROGRESS = 'SEARCH_IN_PROGRESS';
 const PROPERTY_JOB_QUEUE = 'JOB_QUEUE'; // [ {'trigger_id': string, 'task_status': boolean, 'artist_id': string, 'artist_name': string, 'track_name': string}, ...]
 const PROPERTY_SEARCH_RESULTS = 'SEARCH_RESULTS'; // {status: boolean, matched_tracks: Array}
 
+const PROPERTY_FIRED_TRIGGERS = 'FIRED_TRIGGERS'; // {array}
+
 const API_SPOTIFY_BASE_URL = 'https://api.spotify.com/v1/';
 const API_SPOTIFY_AUTH_URL = 'https://accounts.spotify.com/authorize';
 const API_SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
@@ -84,9 +86,7 @@ function resetAddOn() {
   const user_properties = PropertiesService.getUserProperties();
   user_properties.deleteAllProperties();
 
-  ScriptApp.getProjectTriggers().forEach(trigger => {
-    ScriptApp.deleteTrigger(trigger);
-  });
+  deleteFiredClockTriggers();
 
   Logger.log('[DEBUG] Script reset successfully on ' + START);
 }
@@ -688,6 +688,7 @@ function scheduleSearchTracks(event) {
 
 
   let job_queue = JSON.parse(user_properties.getProperty(PROPERTY_JOB_QUEUE));
+  job_queue = [];
 
   let trigger;
   try {
@@ -698,9 +699,7 @@ function scheduleSearchTracks(event) {
 
   } catch (e) {
 
-    ScriptApp.getProjectTriggers().forEach(trigger => {
-      ScriptApp.deleteTrigger(trigger);
-    });
+    deleteFiredClockTriggers();
 
     try {
       trigger = ScriptApp.newTrigger('searchTracks')
@@ -723,10 +722,10 @@ function scheduleSearchTracks(event) {
 
   let trigger_date;
   if (TEST_SEARCH_TASK_TIMEOUT_HANDLING) {
-    trigger_date = new Date().toISOString();
-  } else {
     const today = new Date();
     trigger_date = new Date(today.getFullYear(), today.getMonth(), today.getDay() - 1).toISOString();
+  } else {
+    trigger_date = new Date().toISOString();
   }
 
   const new_job = {
@@ -762,7 +761,7 @@ function searchTracks() {
   if (job_queue !== null) {
     job = job_queue.shift();
   }
-  
+
   if (TEST_SEARCH_TASK_TIMEOUT_HANDLING) {
     throw new Error('TEST_SEARCH_TASK_TIMEOUT_HANDLING');
   }
@@ -770,135 +769,158 @@ function searchTracks() {
   if (job === undefined) {
     user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
       'status': false,
-      'track_name': job.track_name
+      'track_name': job.track_name,
     }));
     throw new Error('No jobs in the queue!');
   }
 
-  const artist_name = job.artist_name;
-  let tracks;
-  try {
-    tracks = spotifyGetArtistTracks(job.artist_id);
-  } catch (e) {
+  const script_properties = PropertiesService.getScriptProperties();
+  let fired_triggers = JSON.parse(script_properties.getProperty(PROPERTY_FIRED_TRIGGERS));
+  if (!fired_triggers) {
+    fired_triggers = [];
+  }
 
+  fired_triggers.push(job.trigger_id);
+  script_properties.setProperty(PROPERTY_FIRED_TRIGGERS, JSON.stringify(fired_triggers));
+
+  const artist_name = job.artist_name;
+
+  try {
+
+    let tracks;
     try {
       tracks = spotifyGetArtistTracks(job.artist_id);
     } catch (e) {
-      if (e.cause === ERROR_SPOTIFY_RATE_LIMIT) {
-        user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
-          'status': false,
-          'track_name': job.track_name
-        }));
-      } else {
-        user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
-          'status': false,
-          'track_name': job.track_name
-        }));
 
-        throw new Error(e.message);
-      }
-    }
-  }
-
-  const track_name = job.track_name.toLowerCase();
-
-  let tracks_matched = [];
-  let translate_flag = false;
-  let album_index = 0;
-  let errors_translation = 0;
-  for (const album of tracks) {
-    if (!album.tracks.length) {
-      continue;
-    }
-
-    let tracks_as_string = album.tracks.reduce((accumulator, currentValue) => accumulator + currentValue.name + ',', '');
-
-    let album_tracks_matched = {
-      'album_url': album.album_url,
-      'album_image': album.album_image,
-      'album_name': album.album_name,
-      'tracks': []
-    };
-
-    for (const del_set of DELIMITER_SETS) {
-      if (album_index % 6 === 0) {
-        Utilities.sleep(1000);
-      }
-
-      tracks_as_string = tracks_as_string.replaceAll(',', del_set.delimiter_track)
-
-      let translation;
       try {
-        translation = LanguageApp.translate(tracks_as_string, '', 'en');
+        tracks = spotifyGetArtistTracks(job.artist_id);
       } catch (e) {
-        Logger.log('[ERROR] ' + e);
+        if (e.cause === ERROR_SPOTIFY_RATE_LIMIT) {
+          user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
+            'status': false,
+            'track_name': job.track_name
+          }));
+        } else {
+          user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
+            'status': false,
+            'track_name': job.track_name
+          }));
 
+          throw new Error(e.message);
+        }
+      }
+    }
+
+    const track_name = job.track_name.toLowerCase();
+
+    let tracks_matched = [];
+    let translate_flag = false;
+    let album_index = 0;
+    let errors_translation = 0;
+    for (const album of tracks) {
+      if (!album.tracks.length) {
+        continue;
+      }
+
+      let tracks_as_string = album.tracks.reduce((accumulator, currentValue) => accumulator + currentValue.name + ',', '');
+
+      let album_tracks_matched = {
+        'album_url': album.album_url,
+        'album_image': album.album_image,
+        'album_name': album.album_name,
+        'tracks': []
+      };
+
+      for (const del_set of DELIMITER_SETS) {
+        if (album_index % 6 === 0) {
+          Utilities.sleep(1000);
+        }
+
+        tracks_as_string = tracks_as_string.replaceAll(',', del_set.delimiter_track)
+
+        let translation;
         try {
           translation = LanguageApp.translate(tracks_as_string, '', 'en');
         } catch (e) {
           Logger.log('[ERROR] ' + e);
 
-          if (errors_translation > 3) {
-            user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
-              'status': false,
-              'track_name': job.track_name
-            }));
+          try {
+            translation = LanguageApp.translate(tracks_as_string, '', 'en');
+          } catch (e) {
+            Logger.log('[ERROR] ' + e);
 
-            throw new Error(e.message);
+            if (errors_translation > 3) {
+              user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
+                'status': false,
+                'track_name': job.track_name
+              }));
+
+              throw new Error(e.message);
+            }
+            errors_translation += 1;
           }
-          errors_translation += 1;
         }
+
+        let tracks_translated = translation.split(del_set.delimiter_track);
+        tracks_translated.pop();
+
+        if (album.tracks.length !== tracks_translated.length) {
+          continue;
+        }
+
+        tracks_translated.forEach((track, track_index) => {
+          const track_trimmed = track.trim();
+
+          if (track_trimmed.toLowerCase().includes(track_name)) {
+            album_tracks_matched.tracks.push({
+              'name': album.tracks[track_index].name,
+              'translation': track_trimmed,
+              'track_index': track_index + 1,
+              'id': album.tracks[track_index].id,
+            });
+          }
+        })
+
+
+        translate_flag = true;
+        DEBUG_L3 && Logger.log('[DEBUG] delimiter set used: ' + Object.values(del_set));
+        break;
       }
 
-      let tracks_translated = translation.split(del_set.delimiter_track);
-      tracks_translated.pop();
-
-      if (album.tracks.length !== tracks_translated.length) {
-        continue;
+      if (album_tracks_matched.tracks.length > 0) {
+        tracks_matched.push(album_tracks_matched);
       }
 
-      tracks_translated.forEach((track, track_index) => {
-        const track_trimmed = track.trim();
-
-        if (track_trimmed.toLowerCase().includes(track_name)) {
-          album_tracks_matched.tracks.push({
-            'name': album.tracks[track_index].name,
-            'translation': track_trimmed,
-            'track_index': track_index + 1,
-            'id': album.tracks[track_index].id,
-          });
-        }
-      })
-
-
-      translate_flag = true;
-      DEBUG_L3 && Logger.log('[DEBUG] delimiter set used: ' + Object.values(del_set));
-      break;
+      album_index += 1;
     }
 
-    if (album_tracks_matched.tracks.length > 0) {
-      tracks_matched.push(album_tracks_matched);
+    if (translate_flag) {
+
+      user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
+        'status': true,
+        'artist_name': artist_name,
+        'tracks_matched': tracks_matched,
+        'track_name': job.track_name
+      }));
+
+    } else {
+      user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
+        'status': false,
+        'track_name': job.track_name
+      }));
     }
 
-    album_index += 1;
-  }
-
-  if (translate_flag) {
-
-    user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
-      'status': true,
-      'artist_name': artist_name,
-      'tracks_matched': tracks_matched,
-      'track_name': job.track_name
-    }));
-
-  } else {
+  } catch (e) {
     user_properties.setProperty(PROPERTY_SEARCH_RESULTS, JSON.stringify({
       'status': false,
       'track_name': job.track_name
     }));
-  }
 
+    user_properties.setProperty(PROPERTY_JOB_QUEUE, JSON.stringify([]));
+    user_properties.setProperty(PROPERTY_SEARCH_IN_PROGRESS, '');
+    throw new Error(e.message);
+  }
+  
   user_properties.setProperty(PROPERTY_JOB_QUEUE, JSON.stringify([]));
   user_properties.setProperty(PROPERTY_SEARCH_IN_PROGRESS, '');
 }
@@ -935,6 +957,7 @@ function showSearchResults(event) {
       .setText('Search failed! Please try a new search query');
 
     user_properties.deleteProperty(PROPERTY_SEARCH_IN_PROGRESS);
+    user_properties.setProperty(PROPERTY_JOB_QUEUE, JSON.stringify([]));
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
@@ -959,6 +982,7 @@ function showSearchResults(event) {
     const notification = CardService.newNotification()
       .setText('No search results found! Please try a new search query');
 
+
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
       .setNavigation(CardService.newNavigation()
@@ -969,6 +993,8 @@ function showSearchResults(event) {
   if (!search_results?.status) {
     const notification = CardService.newNotification()
       .setText('Search failed! Please try a new search query');
+
+    user_properties.setProperty(PROPERTY_JOB_QUEUE, JSON.stringify([]));
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
@@ -996,6 +1022,8 @@ function showSearchResults(event) {
   } else {
     const notification = CardService.newNotification()
       .setText('Search failed! You might have reached daily API limits');
+
+    user_properties.setProperty(PROPERTY_JOB_QUEUE, JSON.stringify([]));
 
     return CardService.newActionResponseBuilder()
       .setNotification(notification)
@@ -1332,6 +1360,7 @@ function saveCredentials(event) {
   }
 
   const user_properties = PropertiesService.getUserProperties();
+  const script_properties = PropertiesService.getScriptProperties();
 
   const credentials = {
     'CLIENT_ID': event.formInputs.client_id[0].trim(),
@@ -1350,6 +1379,7 @@ function saveCredentials(event) {
   user_properties.setProperty(PROPERTY_SPOTIFY_SCOPES_ENABLED, spotify_scopes_enabled);
   user_properties.setProperty(PROPERTY_SPOTIFY_CREDENTIALS, JSON.stringify(credentials));
   user_properties.setProperty(PROPERTY_JOB_QUEUE, JSON.stringify([]));
+  script_properties.setProperty(PROPERTY_FIRED_TRIGGERS, JSON.stringify([]));
 
   return configurationCard({}, true);
 }
@@ -1404,4 +1434,25 @@ function generateCheckboxList(field_name, field_title, list_of_items, default_va
   })
 
   return selection_input;
+}
+
+
+function deleteFiredClockTriggers() {
+  const script_properties = PropertiesService.getScriptProperties();
+
+  const fired_triggers = JSON.parse(script_properties.getProperty(PROPERTY_FIRED_TRIGGERS));
+  if (!fired_triggers && !fired_triggers?.length && fired_triggers.length === 0) {
+    DEBUG && Logger.log('[DEBUG] No fired triggers to remove!');
+    return;
+  }
+
+  let count = 0;
+  ScriptApp.getProjectTriggers().forEach(trigger => {
+    if (fired_triggers.includes(trigger.getUniqueId())) {
+      ScriptApp.deleteTrigger(trigger);
+      count += 1;
+    }
+  });
+
+  DEBUG && Logger.log('[DEBUG] Number of triggers removed: ' + count);
 }
