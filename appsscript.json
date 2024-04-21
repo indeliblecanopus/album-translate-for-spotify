@@ -36,6 +36,10 @@
           "runFunction": "reset"
         },
         {
+          "label": "App Version",
+          "runFunction": "displayAppVersion"
+        },
+        {
           "label": "Support",
           "openLink": "mailto:support@indeliblecanopus.cyou"
         }

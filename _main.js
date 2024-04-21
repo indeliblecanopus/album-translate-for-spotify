@@ -1,3 +1,5 @@
+const VERSION = '1.0';
+
 const DEBUG = false;
 const DEBUG_L2 = false;
 const DEBUG_L3 = false;
@@ -75,6 +77,16 @@ function reset() {
   }
 
   return configurationCard();
+}
+
+
+function displayAppVersion() {
+  const notification = CardService.newNotification()
+    .setText(`Version: ${VERSION}`);
+
+  return CardService.newActionResponseBuilder()
+    .setNotification(notification)
+    .build();
 }
 
 
@@ -930,7 +942,7 @@ function searchTracks() {
     user_properties.setProperty(PROPERTY_SEARCH_IN_PROGRESS, '');
     throw new Error(e.message);
   }
-  
+
   user_properties.setProperty(PROPERTY_JOB_QUEUE, JSON.stringify([]));
   user_properties.setProperty(PROPERTY_SEARCH_IN_PROGRESS, '');
 }
