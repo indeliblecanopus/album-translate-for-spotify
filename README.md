@@ -4,7 +4,7 @@
 Google Workspace Add-on to help translate Spotify® album track names and search within the artist's discography.
 
 
-https://user-images.githubusercontent.com/96784214/227575270-1d8b3289-9456-4d52-99d4-f2f5b847a4f2.mp4
+https://github.com/user-attachments/assets/f5d0e79d-79b4-4578-8ab9-b56119e4e2c9
 
 
 **Note**: This is not an official Google or Spotify product.
